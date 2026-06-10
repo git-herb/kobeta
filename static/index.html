@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영상 자동 분석 파이프라인</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0b0b09; --ink-2:#121210; --paper:#f4f1e6; --paper-dim:#a8a596;
+    --citron:#ccff00; --citron-deep:#9fc800; --line:rgba(244,241,230,0.14);
+    --mono:'JetBrains Mono', ui-monospace, monospace;
+    --sans:'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  ::selection{background:var(--citron);color:var(--ink)}
+  body{ font-family:var(--sans); font-weight:500; background:var(--ink); color:var(--paper); line-height:1.6; overflow-x:hidden; cursor:none; }
+  body::after{ content:""; position:fixed; inset:0; pointer-events:none; z-index:9000; opacity:.05;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); mix-blend-mode:overlay; }
+  .cursor{ position:fixed; top:0; left:0; width:14px; height:14px; border-radius:50%; background:var(--citron);
+    pointer-events:none; z-index:9999; transform:translate(-50%,-50%); mix-blend-mode:difference; transition:width .2s,height .2s; }
+  .cursor.big{width:54px;height:54px}
+  @media (hover:none){ body{cursor:auto} .cursor{display:none} }
+
+  .wrap{max-width:1080px;margin:0 auto;padding:0 32px}
+  a{color:inherit}
+
+  .topbar{ display:flex; justify-content:space-between; align-items:center; padding:22px 32px;
+    font-family:var(--mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--paper-dim);
+    border-bottom:1px solid var(--line); }
+  .topbar .brand{color:var(--paper);font-weight:700}
+
+  header.hero{ padding:70px 0 30px; }
+  .meta-row{ font-family:var(--mono); font-size:13px; letter-spacing:.05em; color:var(--citron);
+    display:flex; gap:14px; align-items:center; margin-bottom:24px; }
+  .meta-row .ln{flex:1;height:1px;background:var(--line)}
+  h1.display{ font-weight:800; font-size:clamp(40px,8vw,84px); line-height:.92; letter-spacing:-.03em; }
+  h1.display .cit{color:var(--citron)}
+  header.hero p{ max-width:560px; color:var(--paper-dim); font-size:16px; margin-top:22px; }
+
+  .label{ font-family:var(--mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--citron);
+    display:flex; gap:12px; align-items:center; margin:0 0 18px; }
+  .label::before{content:"";width:26px;height:1px;background:var(--citron)}
+
+  button{ font-family:var(--sans); font-size:.95em; font-weight:700; padding:13px 26px; border:0; border-radius:0;
+    background:var(--citron); color:var(--ink); cursor:none; transition:background .2s; }
+  button:hover{background:#fff}
+  button:disabled{ background:#3a3a34; color:var(--paper-dim); }
+  button.ghost{ background:transparent; color:var(--paper); border:1px solid var(--line); font-family:var(--mono);
+    font-size:12px; letter-spacing:.08em; text-transform:uppercase; padding:11px 18px; }
+  button.ghost:hover{ background:var(--citron); color:var(--ink); border-color:var(--citron); }
+
+  .uploader{ border:1px dashed rgba(244,241,230,0.25); padding:34px; text-align:center; background:var(--ink-2); margin-top:10px; }
+  .uploader input[type=file]{ color:var(--paper-dim); font-family:var(--mono); font-size:13px; }
+  .uploader input[type=file]::file-selector-button{ font-family:var(--mono); font-size:12px; text-transform:uppercase;
+    letter-spacing:.06em; background:transparent; color:var(--paper); border:1px solid var(--line); padding:8px 14px; margin-right:14px; cursor:none; }
+  .uploader .hint{ display:block; margin-top:16px; font-family:var(--mono); font-size:11px; letter-spacing:.05em; color:var(--paper-dim); text-transform:uppercase; }
+  .opts{ display:flex; gap:26px; flex-wrap:wrap; margin-top:16px; }
+  .opts label{ display:flex; flex-direction:column; gap:6px; font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--paper-dim); text-align:left; }
+  .opts select{ font-family:var(--mono); font-size:13px; background:var(--ink); color:var(--paper); border:1px solid var(--line); padding:8px 10px; cursor:none; }
+  .opts select:focus{ outline:1px solid var(--citron); }
+
+  /* ---------- 플로우차트 (3단계, 산출물 기준) ---------- */
+  .flow{ display:grid; grid-template-columns:1fr auto 1fr auto 1fr auto 1fr; align-items:stretch; gap:0; margin:14px 0 8px; }
+  .node{ border:1px solid var(--line); background:var(--ink-2); padding:22px 18px; transition:all .25s; }
+  .node .no{ font-family:var(--mono); font-size:12px; color:var(--paper-dim); letter-spacing:.08em; }
+  .node .name{ font-weight:800; font-size:clamp(18px,2.6vw,26px); letter-spacing:-.01em; margin:8px 0 12px; color:inherit; }
+  .node .file{ font-family:var(--mono); font-size:11px; color:var(--paper-dim); border:1px solid var(--line); padding:2px 7px; display:inline-block; }
+  .node .foot{ display:flex; align-items:center; justify-content:space-between; margin-top:16px; }
+  .node .badge{ font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; }
+  .node .caret{ font-family:var(--mono); color:var(--paper-dim); }
+  .node .prog{ font-family:var(--mono); font-size:12px; font-weight:700; color:var(--citron); }
+  .node.active{ border-color:var(--citron); color:var(--citron); box-shadow:inset 0 0 0 1px var(--citron); }
+  .node.active .file{ border-color:var(--citron-deep); color:var(--citron); }
+  .node.done{ border-color:var(--citron-deep); color:var(--paper); }
+  .node.done .badge{ color:var(--citron); }
+  .conn{ display:flex; align-items:center; justify-content:center; color:var(--paper-dim); font-family:var(--mono); padding:0 10px; }
+  .conn.done{ color:var(--citron); }
+  @media (max-width:760px){ .flow{ grid-template-columns:1fr; } .conn{ padding:6px 0; transform:rotate(90deg); } }
+
+  .msg{ margin-top:18px; padding:13px 16px; font-family:var(--mono); font-size:13px; }
+  .msg.error{ background:rgba(255,80,80,.08); border:1px solid rgba(255,120,120,.4); color:#ffb4b4; }
+  .msg.warn{ background:rgba(204,255,0,.06); border:1px solid var(--citron-deep); color:var(--citron); white-space:pre-wrap; }
+  .hidden{display:none}
+
+  /* ---------- 산출물 패널 (접기/펼치기) ---------- */
+  .toolbar{ display:flex; gap:10px; flex-wrap:wrap; margin:34px 0 6px; }
+  .output{ border-top:1px solid var(--line); padding:26px 0; }
+  .output .out-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .output .out-head .h{ font-weight:800; font-size:clamp(20px,3vw,30px); letter-spacing:-.01em; }
+  .file-chip{ font-family:var(--mono); font-size:11px; color:var(--citron); border:1px solid var(--citron-deep); padding:2px 7px; }
+  .output.collapsed .out-body{ display:none; }
+  .out-body{ margin-top:18px; }
+  audio{ width:100%; }
+
+  .subwrap .cues{ max-height:360px; overflow-y:auto; border:1px solid var(--line); background:var(--ink-2); }
+  .cue{ display:grid; grid-template-columns:180px 1fr; gap:12px; padding:8px 14px; border-bottom:1px solid var(--line); font-size:.93em; }
+  .cue:last-child{border-bottom:0}
+  .cue .tc{ font-family:var(--mono); font-size:.82em; color:var(--paper-dim); }
+  .cue.changed{ border-left:2px solid var(--citron); }
+  .cue.changed .tx{ color:var(--citron); }
+
+  .scene{ display:grid; grid-template-columns:220px 1fr; gap:20px; padding:18px 0; border-bottom:1px solid var(--line); }
+  .scene .thumb img{ width:220px; border:1px solid var(--line); display:block; }
+  .scene .fname{ font-family:var(--mono); font-size:11px; color:var(--paper-dim); margin-top:6px; text-align:center; }
+  .scene h4{ font-weight:800; font-size:1.05em; margin-bottom:4px; }
+  .scene h4 .tc{ font-family:var(--mono); font-size:.72em; color:var(--paper-dim); font-weight:400; margin-left:8px; }
+  .scene .sub{ color:var(--paper-dim); font-size:.92em; margin:8px 0; }
+  .scene .row{ font-size:.92em; margin:3px 0; }
+  .scene .row b{ color:var(--citron); font-weight:700; }
+  .kw{ display:inline-block; font-family:var(--mono); font-size:.74em; color:var(--citron); border:1px solid var(--citron-deep); padding:2px 9px; margin:4px 5px 0 0; }
+
+  .tech-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .tcard{ border:1px solid var(--line); background:var(--ink-2); padding:16px; }
+  .tcard h5{ font-family:var(--mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--citron); margin-bottom:10px; }
+  .tcard .none{ color:var(--paper-dim); font-size:.9em; }
+  .tcard .seg{ font-family:var(--mono); font-size:.82em; color:var(--paper); border-bottom:1px solid var(--line); padding:4px 0; }
+  .tcard .seg:last-child{ border-bottom:0; }
+  .tcard .big{ font-weight:800; font-size:1.6em; color:var(--paper); }
+  .tcard .warn-clip{ color:#ffb4b4; }
+
+  footer{ padding:36px 0; border-top:1px solid var(--line); font-family:var(--mono); font-size:11px;
+    letter-spacing:.06em; color:var(--paper-dim); text-transform:uppercase; }
+</style>
+</head>
+<body>
+  <div class="cursor" id="cursor"></div>
+
+  <nav class="topbar">
+    <span class="brand">영상 자동 분석 파이프라인</span>
+    <span>WHISPER · GPT · SCENE</span>
+  </nav>
+
+  <header class="hero">
+    <div class="wrap">
+      <div class="meta-row"><span>VIDEO ANALYSIS</span><span class="ln"></span><span>오디오 · 자막 · 장면</span></div>
+      <h1 class="display">영상에서 <span class="cit">의미</span>를<br>자동으로 뽑아낸다</h1>
+      <p>영상을 올리면 오디오·자막·장면 분석이 순서대로 진행됩니다. 이전에 생성한 <b style="color:var(--paper)">산출물 파일</b>을 올리면 해당 단계는 건너뛰고 이어서 분석합니다. 아래 흐름의 각 단계를 눌러 산출물을 펼치거나 접을 수 있습니다.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="label">001 — 입력 (영상 또는 산출물)</div>
+    <div class="uploader">
+      <input type="file" id="file" accept="video/*,.srt,.json,.mp3,.jpg" multiple>
+      <button id="uploadBtn">분석 시작</button>
+      <span class="hint">영상 1개로 전체 분석 · 또는 기존 산출물(여러 개)을 올려 보기/중간단계 재개</span>
+      <div class="opts">
+        <label>Whisper (자막)
+          <select id="optWhisper">
+            <option value="openai">OpenAI API · whisper-1</option>
+            <option value="local:base">로컬 · base (빠름)</option>
+            <option value="local:small">로컬 · small</option>
+            <option value="local:medium">로컬 · medium (정확)</option>
+          </select>
+        </label>
+        <label>분석/교정 모델
+          <select id="optLlm">
+            <option value="gpt-4o-mini">gpt-4o-mini · 빠름/저렴</option>
+            <option value="gpt-4o">gpt-4o · 고품질</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="label" style="margin-top:46px">002 — 진행 흐름 / 산출물</div>
+    <!-- 3단계 플로우차트: 항상 표시, 클릭 시 하단 산출물 토글 -->
+    <div class="flow" id="flow">
+      <div class="node" data-step="1" data-target="out-audio">
+        <div class="no">/01</div>
+        <div class="name">추출된 오디오</div>
+        <div class="file">audio.mp3</div>
+        <div class="foot"><span class="badge">○ 대기</span><span class="caret">▸</span></div>
+      </div>
+      <div class="conn" data-conn="1">→</div>
+      <div class="node" data-step="2" data-target="out-sub">
+        <div class="no">/02</div>
+        <div class="name">자막</div>
+        <div class="file">corrected.srt</div>
+        <div class="foot"><span class="badge">○ 대기</span><span class="caret">▸</span></div>
+      </div>
+      <div class="conn" data-conn="2">→</div>
+      <div class="node" data-step="3" data-target="out-scenes">
+        <div class="no">/03</div>
+        <div class="name">장면 분석</div>
+        <div class="file">metadata.json</div>
+        <div class="foot"><span class="badge">○ 대기</span><span class="prog" id="sceneCount"></span><span class="caret">▸</span></div>
+      </div>
+      <div class="conn" data-conn="3">→</div>
+      <div class="node" data-step="4" data-target="out-tech">
+        <div class="no">/04</div>
+        <div class="name">기술 검토</div>
+        <div class="file">tech.json</div>
+        <div class="foot"><span class="badge">○ 대기</span><span class="caret">▸</span></div>
+      </div>
+    </div>
+
+    <div id="warn" class="msg warn hidden"></div>
+    <div id="error" class="msg error hidden"></div>
+
+    <div id="results" class="hidden">
+      <div class="toolbar">
+        <button class="ghost" id="openFolder">📂 작업 폴더 열기</button>
+      </div>
+
+      <section class="output" id="out-audio">
+        <div class="out-head"><span class="h">추출된 오디오</span><span class="file-chip">audio.mp3</span></div>
+        <div class="out-body"><audio id="audio" controls></audio></div>
+      </section>
+
+      <section class="output subwrap" id="out-sub">
+        <div class="out-head"><span class="h">교정된 자막</span><span class="file-chip">corrected.srt</span></div>
+        <div class="out-body">
+          <div class="cues" id="corrCues"></div>
+        </div>
+      </section>
+
+      <section class="output" id="out-scenes">
+        <div class="out-head"><span class="h">장면 분석</span><span class="file-chip">metadata.json</span><span class="file-chip">frames/</span></div>
+        <div class="out-body"><div id="scenes"></div></div>
+      </section>
+
+      <section class="output" id="out-tech">
+        <div class="out-head"><span class="h">기술 검토</span><span class="file-chip">tech.json</span></div>
+        <div class="out-body"><div id="tech"></div></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="wrap">VIDEO ANALYSIS PIPELINE — WHISPER · GPT · SCENE</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let timer = null, currentJobId = null;
+
+/* 커스텀 커서 */
+const cur = $("cursor"); let cx=0,cy=0,tx=0,ty=0;
+addEventListener('mousemove', e=>{tx=e.clientX;ty=e.clientY});
+(function loop(){ cx+=(tx-cx)*.2; cy+=(ty-cy)*.2; cur.style.left=cx+'px'; cur.style.top=cy+'px'; requestAnimationFrame(loop); })();
+addEventListener('mouseover', e=>{ if(e.target.closest('button,input,.node,a')) cur.classList.add('big'); });
+addEventListener('mouseout', e=>{ if(e.target.closest('button,input,.node,a')) cur.classList.remove('big'); });
+
+/* 플로우 노드 클릭 → 해당 산출물 패널 접기/펼치기 */
+$("flow").addEventListener('click', e=>{
+  const node = e.target.closest('.node'); if(!node) return;
+  const sec = $(node.dataset.target); if(!sec) return;
+  const collapsed = sec.classList.toggle('collapsed');
+  node.querySelector('.caret').textContent = collapsed ? '▸' : '▾';
+});
+
+$("uploadBtn").onclick = async () => {
+  const picked = $("file").files;
+  if (!picked.length) { alert("영상 또는 산출물 파일을 선택하세요."); return; }
+  $("uploadBtn").disabled = true;
+  $("error").classList.add("hidden");
+  $("warn").classList.add("hidden");
+  $("results").classList.add("hidden");
+  updateFlow(0);
+
+  const form = new FormData();
+  for (const f of picked) form.append("files", f);
+  const w = $("optWhisper").value;  // "openai" 또는 "local:base" 등
+  if (w.startsWith("local:")) { form.append("whisper_backend", "local"); form.append("whisper_model", w.split(":")[1]); }
+  else { form.append("whisper_backend", "openai"); form.append("whisper_model", "base"); }
+  form.append("llm_model", $("optLlm").value);
+  const res = await fetch("/upload", { method: "POST", body: form });
+  if (!res.ok) { showError("업로드 실패"); return; }
+  const data = await res.json();
+  currentJobId = data.job_id;
+  timer = setInterval(() => poll(currentJobId), 2000);
+};
+
+$("openFolder").onclick = async () => {
+  if (!currentJobId) return;
+  const r = await fetch(`/jobs/${currentJobId}/open`, { method: "POST" });
+  if (!r.ok) showError("작업 폴더를 열 수 없습니다.");
+};
+
+async function poll(jobId) {
+  const res = await fetch(`/jobs/${jobId}`);
+  if (!res.ok) { clearInterval(timer); showError("작업 상태를 가져올 수 없습니다."); return; }
+  const job = await res.json();
+
+  if (job.status === "done") {
+    clearInterval(timer);
+    updateFlow(99);
+    $("sceneCount").textContent = "";
+    if (job.warnings && job.warnings.length) showWarn(job.warnings.join("\n"));
+    await renderResults(jobId);
+    $("uploadBtn").disabled = false;
+  } else if (job.status === "error") {
+    clearInterval(timer);
+    showError(job.error || "처리 중 오류가 발생했습니다.");
+  } else {
+    updateFlow(job.step);
+    $("sceneCount").textContent = (job.step === 5 && job.scene_total) ? `${job.scene_done}/${job.scene_total}` : "";
+  }
+}
+
+/* 백엔드 7단계 → 산출물 4단계 매핑
+   1.오디오=step1 · 2.자막=step2~3 · 3.장면분석=step4~6 · 4.기술검토=step7 */
+function flowStates(step) {
+  if (step >= 99) return ["done","done","done","done"];
+  const st = ["pending","pending","pending","pending"];
+  if (step >= 2) st[0] = "done"; else if (step === 1) st[0] = "active";
+  if (step >= 4) st[1] = "done"; else if (step >= 2) st[1] = "active";
+  if (step >= 7) st[2] = "done"; else if (step >= 4) st[2] = "active";
+  if (step === 7) st[3] = "active";
+  return st;
+}
+const BADGE = { pending: "○ 대기", active: "▶ 진행 중", done: "✓ 완료" };
+function updateFlow(step) {
+  const states = flowStates(step);
+  document.querySelectorAll("#flow .node").forEach((node, i) => {
+    const s = states[i];
+    node.classList.remove("active","done");
+    if (s !== "pending") node.classList.add(s);
+    node.querySelector(".badge").textContent = BADGE[s];
+  });
+  document.querySelectorAll("#flow .conn").forEach(c => {
+    c.classList.toggle("done", states[+c.dataset.conn - 1] === "done");
+  });
+}
+
+function parseSrt(text) {
+  return text.trim().split(/\r?\n\r?\n/).map(block => {
+    const lines = block.split(/\r?\n/);
+    return { tc: lines[1] || "", text: lines.slice(2).join(" ") };
+  }).filter(c => c.tc.includes("-->"));
+}
+
+async function renderResults(jobId) {
+  const r = await fetch(`/jobs/${jobId}/result`);
+  if (!r.ok) { showError("결과를 가져올 수 없습니다."); return; }
+  const data = await r.json();
+
+  // ① 오디오
+  $("audio").src = data.audio_data || "";
+
+  // ② 자막 — UI에는 교정 자막만 표출 (원본은 변경 여부 판단에만 사용)
+  const orig = parseSrt(data.original_srt), corr = parseSrt(data.corrected_srt);
+  $("corrCues").innerHTML = corr.map((c, i) => {
+    const changed = orig[i] && orig[i].text !== c.text ? " changed" : "";
+    return `<div class="cue${changed}"><span class="tc">${c.tc}</span><span class="tx">${esc(c.text)}</span></div>`;
+  }).join("");
+
+  // ③ 장면 분석
+  $("scenes").innerHTML = data.metadata.scenes.map(s => `
+    <div class="scene">
+      <div class="thumb">
+        <img src="${s.frame_data || ""}" alt="장면 ${s.index}">
+        <div class="fname">${s.frame}</div>
+      </div>
+      <div>
+        <h4>장면 ${s.index}<span class="tc">${s.start} → ${s.end}</span></h4>
+        <div class="sub">${s.subtitles.length ? esc(s.subtitles.join(" ")) : "<i>대사 없음</i>"}</div>
+        <div class="row"><b>요약</b> ${esc(s.analysis.summary)}</div>
+        <div class="row"><b>화면</b> ${esc(s.analysis.visual_description)}</div>
+        <div class="row">${(s.analysis.keywords || []).map(k => `<span class="kw">${esc(k)}</span>`).join("")}</div>
+      </div>
+    </div>`).join("");
+
+  // ④ 기술 검토
+  renderTech(data.tech);
+
+  // 산출물 패널 펼친 상태로 표시
+  document.querySelectorAll(".output").forEach(o => o.classList.remove("collapsed"));
+  document.querySelectorAll("#flow .caret").forEach(c => c.textContent = "▾");
+  $("results").classList.remove("hidden");
+}
+
+function fmtT(sec) {
+  if (sec == null) return "—";
+  const s = Math.floor(sec % 60), m = Math.floor(sec / 60);
+  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+function segList(arr) {
+  if (!arr || !arr.length) return '<div class="none">감지된 구간 없음</div>';
+  return arr.map(x => `<div class="seg">${fmtT(x.start)} → ${fmtT(x.end)} <span style="color:var(--paper-dim)">(${(x.duration||0).toFixed(1)}s)</span></div>`).join("");
+}
+function renderTech(tech) {
+  if (!tech) { $("tech").innerHTML = '<div class="none">원본 영상이 없어 기술 검토를 건너뛰었습니다.</div>'; return; }
+  const clip = tech.clipping || {};
+  const clipped = clip.clipped_samples || 0;
+  $("tech").innerHTML = `
+    <div class="tech-grid">
+      <div class="tcard"><h5>블랙 구간</h5>${segList(tech.black)}</div>
+      <div class="tcard"><h5>무음 구간</h5>${segList(tech.silence)}</div>
+      <div class="tcard"><h5>정지 화면</h5>${segList(tech.freeze)}</div>
+      <div class="tcard"><h5>오디오 클리핑</h5>
+        <div class="big ${clipped > 0 ? 'warn-clip' : ''}">${clipped > 0 ? '⚠ 의심' : '정상'}</div>
+        <div class="seg">최대 볼륨 ${clip.max_volume_db != null ? clip.max_volume_db + ' dB' : '—'}</div>
+        <div class="seg">0dB 샘플 ${clipped}</div>
+      </div>
+    </div>`;
+}
+
+function esc(s){ const d=document.createElement("div"); d.textContent = s==null?"":s; return d.innerHTML; }
+function showError(msg){ $("error").textContent=msg; $("error").classList.remove("hidden"); $("uploadBtn").disabled=false; }
+function showWarn(msg){ $("warn").textContent="참고: "+msg; $("warn").classList.remove("hidden"); }
+</script>
+</body>
+</html>

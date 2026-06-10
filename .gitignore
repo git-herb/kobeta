@@ -1,0 +1,6 @@
+.env
+jobs/
+__pycache__/
+.playwright-mcp/
+testVideo.mp4
+about-sideonai.html
