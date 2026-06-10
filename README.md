@@ -170,3 +170,4 @@ frames/testVideo_5_frame001_20260610-135925.jpg
 - 개인용 로컬 도구로 설계되었습니다(인증 없음, localhost 전용).
 - 작업 폴더 열기 기능은 Windows(`os.startfile`) 기준입니다.
 - `jobs/`, `.env`, 샘플 영상은 `.gitignore`에 포함되어 커밋되지 않습니다.
+<sub>by ㅎㅅ</sub>
